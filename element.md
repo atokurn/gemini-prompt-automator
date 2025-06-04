@@ -27,3 +27,4 @@
 #app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.is-mobile-device.visible > button > span.mat-mdc-button-persistent-ripple.mdc-icon-button__ripple
 
 #app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.is-mobile-device.visible.disabled > button
+
