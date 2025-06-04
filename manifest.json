@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Prompt Automator",
+  "version": "1.0",
+  "description": "Otomatisasi input prompt dari file Excel ke Chat Gemini dengan interval waktu yang dapat dikonfigurasi",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon16.svg",
+      "48": "images/icon48.svg",
+      "128": "images/icon128.svg"
+    }
+  },
+  "icons": {
+    "16": "images/icon16.svg",
+    "48": "images/icon48.svg",
+    "128": "images/icon128.svg"
+  }
+}

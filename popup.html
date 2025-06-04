@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Prompt Automator</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><i class="fas fa-robot"></i> Gemini Prompt Automator</h1>
+    </header>
+    
+    <main>
+      <section class="status-section">
+        <div class="status-container">
+          <div class="status-indicator">
+            <div id="status-badge" class="status-badge idle">idle</div>
+            <div id="timer-display" class="timer-display">--:--</div>
+          </div>
+          <div class="control-buttons">
+            <button id="start-btn" class="btn primary"><i class="fas fa-play"></i> Mulai</button>
+            <button id="stop-btn" class="btn danger" disabled><i class="fas fa-stop"></i> Berhenti</button>
+          </div>
+        </div>
+      </section>
+      
+      <section class="tabs">
+        <div class="tab-header">
+          <button class="tab-btn active" data-tab="prompts"><i class="fas fa-list"></i> Prompts</button>
+          <button class="tab-btn" data-tab="settings"><i class="fas fa-cog"></i> Pengaturan</button>
+          <button class="tab-btn" data-tab="logs"><i class="fas fa-history"></i> Log</button>
+        </div>
+        
+        <div class="tab-content">
+          <!-- Tab Prompts -->
+          <div class="tab-pane active" id="prompts-tab">
+            <div class="file-upload">
+              <label for="excel-file" class="file-label">
+                <i class="fas fa-file-excel"></i> Pilih File Excel
+                <input type="file" id="excel-file" accept=".xlsx" />
+              </label>
+              <span id="file-name">Belum ada file dipilih</span>
+            </div>
+            
+            <div class="prompt-list-container">
+              <h3>Daftar Prompt <span id="prompt-count">(0)</span></h3>
+              <div id="prompt-list" class="prompt-list">
+                <div class="empty-state">
+                  <i class="fas fa-file-import fa-2x"></i>
+                  <p>Pilih file Excel untuk memuat daftar prompt</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Tab Pengaturan -->
+          <div class="tab-pane" id="settings-tab">
+            <div class="settings-group">
+              <h3>Interval Waktu</h3>
+              <div class="setting-item">
+                <label>Tipe Interval:</label>
+                <div class="radio-group">
+                  <label>
+                    <input type="radio" name="interval-type" value="fixed" checked>
+                    Tetap
+                  </label>
+                  <label>
+                    <input type="radio" name="interval-type" value="random">
+                    Acak
+                  </label>
+                </div>
+              </div>
+              
+              <div id="fixed-interval-setting" class="setting-item">
+                <label for="fixed-interval">Interval Tetap (detik):</label>
+                <input type="number" id="fixed-interval" min="5" max="3600" value="30">
+              </div>
+              
+              <div id="random-interval-setting" class="setting-item hidden">
+                <div class="range-input">
+                  <label for="min-interval">Minimum </label>
+                  <input type="number" id="min-interval" min="5" max="3600" value="10">
+                </div>
+                <div class="range-input">
+                  <label for="max-interval">Maksimum </label>
+                  <input type="number" id="max-interval" min="5" max="3600" value="60">
+                </div>
+              </div>
+            </div>
+            
+            <div class="settings-group">
+              <h3>Pengulangan</h3>
+              <div class="setting-item">
+                <label for="max-repeats">Ulangi setiap prompt (kali):</label>
+                <input type="number" id="max-repeats" min="1" max="100" value="1">
+              </div>
+              
+              <div class="setting-item">
+                <label for="global-repeat">Ulangi semua prompt setelah selesai:</label>
+                <label class="switch">
+                  <input type="checkbox" id="global-repeat" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="settings-group">
+              <h3>Lainnya</h3>
+              <div class="setting-item">
+                <label for="auto-download">Unduh gambar otomatis:</label>
+                <label class="switch">
+                  <input type="checkbox" id="auto-download" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="settings-actions">
+              <button id="save-settings" class="btn primary"><i class="fas fa-save"></i> Simpan Pengaturan</button>
+            </div>
+          </div>
+          
+          <!-- Tab Log -->
+          <div class="tab-pane" id="logs-tab">
+            <div class="log-header">
+              <h3>Riwayat Aktivitas</h3>
+              <button id="clear-logs" class="btn small"><i class="fas fa-trash"></i> Bersihkan</button>
+            </div>
+            
+            <div id="error-display" class="error-display hidden">
+              <div class="error-title"><i class="fas fa-exclamation-triangle"></i> Error Terakhir:</div>
+              <div id="last-error" class="error-message"></div>
+            </div>
+            
+            <div id="log-list" class="log-list">
+              <div class="empty-state">
+                <i class="fas fa-clipboard-list fa-2x"></i>
+                <p>Belum ada aktivitas tercatat</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    
+    <footer>
+      <p>Gemini Prompt Automator v1.0</p>
+    </footer>
+  </div>
+  
+  <!-- Load library untuk membaca file Excel -->
+  <script src="xlsx.full.min.js"></script>
+  
+  <!-- Load script utama -->
+  <script src="popup.js"></script>
+</body>
+</html>

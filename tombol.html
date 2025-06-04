@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tombol Mulai Hentikan</title>
+    <style>
+        /* Gaya dasar untuk body */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: #f0f0f0; /* Warna latar belakang halaman */
+        }
+
+        /* Gaya untuk tombol */
+        .toggle-button {
+            padding: 15px 30px; /* Padding di dalam tombol */
+            font-size: 18px; /* Ukuran font teks tombol */
+            font-weight: bold; /* Ketebalan font */
+            color: white; /* Warna teks tombol */
+            border: none; /* Hilangkan border default */
+            border-radius: 8px; /* Sudut tombol yang membulat */
+            cursor: pointer; /* Ubah kursor menjadi tangan saat di atas tombol */
+            transition: background-color 0.3s ease, transform 0.1s ease; /* Transisi halus untuk perubahan warna dan transformasi */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Bayangan halus untuk efek 3D */
+            outline: none; /* Hilangkan outline saat tombol difokuskan */
+        }
+
+        /* Gaya untuk tombol dalam keadaan "Mulai" (default) */
+        .toggle-button.start {
+            background-color: #28a745; /* Warna hijau untuk "Mulai" */
+        }
+
+        /* Gaya untuk tombol dalam keadaan "Hentikan" */
+        .toggle-button.stop {
+            background-color: #dc3545; /* Warna merah untuk "Hentikan" */
+        }
+
+        /* Efek saat tombol ditekan */
+        .toggle-button:active {
+            transform: scale(0.98); /* Sedikit mengecilkan tombol saat ditekan */
+            box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1); /* Mengurangi bayangan saat ditekan */
+        }
+
+        /* Efek hover pada tombol */
+        .toggle-button.start:hover {
+            background-color: #218838; /* Warna hijau lebih gelap saat hover */
+        }
+
+        .toggle-button.stop:hover {
+            background-color: #c82333; /* Warna merah lebih gelap saat hover */
+        }
+    </style>
+</head>
+<body>
+
+    <button id="myButton" class="toggle-button start">Mulai</button>
+
+    <script>
+        // Dapatkan elemen tombol
+        const button = document.getElementById('myButton');
+        // Variabel untuk melacak status tombol (true = sedang berjalan/stop, false = siap mulai)
+        let isRunning = false;
+
+        // Tambahkan event listener untuk klik pada tombol
+        button.addEventListener('click', function() {
+            // Ubah status
+            isRunning = !isRunning;
+
+            if (isRunning) {
+                // Jika sedang berjalan, ubah teks menjadi "Hentikan" dan gaya menjadi "stop"
+                button.textContent = 'Hentikan';
+                button.classList.remove('start');
+                button.classList.add('stop');
+                console.log('Proses dimulai...'); // Aksi yang dilakukan saat tombol "Mulai" ditekan
+            } else {
+                // Jika dihentikan, ubah teks menjadi "Mulai" dan gaya menjadi "start"
+                button.textContent = 'Mulai';
+                button.classList.remove('stop');
+                button.classList.add('start');
+                console.log('Proses dihentikan.'); // Aksi yang dilakukan saat tombol "Hentikan" ditekan
+            }
+        });
+    </script>
+
+</body>
+</html>
