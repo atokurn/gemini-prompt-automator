@@ -58,7 +58,7 @@
           
           <!-- Tab Pengaturan -->
           <div class="tab-pane" id="settings-tab">
-            <div class="settings-group">
+            <div class="settings-group interval-settings">
               <h3>Interval Waktu</h3>
               <div class="setting-item">
                 <label>Tipe Interval:</label>
@@ -115,6 +115,65 @@
                   <input type="checkbox" id="auto-download" checked>
                   <span class="slider round"></span>
                 </label>
+              </div>
+            </div>
+            
+            <div id="download-settings" class="settings-group">
+              <h3>Pengaturan Download</h3>
+              <div class="setting-item">
+                <label>Tipe Interval Download:</label>
+                <div class="radio-group">
+                  <label>
+                    <input type="radio" name="download-interval-type" value="fixed" checked>
+                    Tetap
+                  </label>
+                  <label>
+                    <input type="radio" name="download-interval-type" value="random">
+                    Acak
+                  </label>
+                </div>
+              </div>
+              
+              <!-- Sebelum Download -->
+              <div class="setting-item">
+                <h4>Sebelum Download</h4>
+                <div id="fixed-before-download-setting" class="download-row">
+                  <div class="range-input">
+                    <label for="fixed-before-download">Tetap (detik):</label>
+                    <input type="number" id="fixed-before-download" min="1" max="300" value="3">
+                  </div>
+                </div>
+                <div id="random-before-download-setting" class="download-row hidden">
+                  <div class="range-input">
+                    <label for="min-before-download">Min (detik):</label>
+                    <input type="number" id="min-before-download" min="1" max="300" value="2">
+                  </div>
+                  <div class="range-input">
+                    <label for="max-before-download">Max (detik):</label>
+                    <input type="number" id="max-before-download" min="1" max="300" value="5">
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Setelah Download -->
+              <div class="setting-item">
+                <h4>Setelah Download</h4>
+                <div id="fixed-after-download-setting" class="download-row">
+                  <div class="range-input">
+                    <label for="fixed-after-download">Tetap (detik):</label>
+                    <input type="number" id="fixed-after-download" min="1" max="300" value="2">
+                  </div>
+                </div>
+                <div id="random-after-download-setting" class="download-row hidden">
+                  <div class="range-input">
+                    <label for="min-after-download">Min (detik):</label>
+                    <input type="number" id="min-after-download" min="1" max="300" value="1">
+                  </div>
+                  <div class="range-input">
+                    <label for="max-after-download">Max (detik):</label>
+                    <input type="number" id="max-after-download" min="1" max="300" value="3">
+                  </div>
+                </div>
               </div>
             </div>
             

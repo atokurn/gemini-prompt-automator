@@ -20,6 +20,18 @@ const maxIntervalInput = document.getElementById('max-interval');
 const maxRepeatsInput = document.getElementById('max-repeats');
 const globalRepeatCheckbox = document.getElementById('global-repeat');
 const autoDownloadCheckbox = document.getElementById('auto-download');
+const downloadSettings = document.getElementById('download-settings');
+const downloadIntervalTypeRadios = document.querySelectorAll('input[name="download-interval-type"]');
+const fixedBeforeDownloadSetting = document.getElementById('fixed-before-download-setting');
+const randomBeforeDownloadSetting = document.getElementById('random-before-download-setting');
+const fixedAfterDownloadSetting = document.getElementById('fixed-after-download-setting');
+const randomAfterDownloadSetting = document.getElementById('random-after-download-setting');
+const fixedBeforeDownloadInput = document.getElementById('fixed-before-download');
+const fixedAfterDownloadInput = document.getElementById('fixed-after-download');
+const minBeforeDownloadInput = document.getElementById('min-before-download');
+const maxBeforeDownloadInput = document.getElementById('max-before-download');
+const minAfterDownloadInput = document.getElementById('min-after-download');
+const maxAfterDownloadInput = document.getElementById('max-after-download');
 const saveSettingsBtn = document.getElementById('save-settings');
 const logList = document.getElementById('log-list');
 const clearLogsBtn = document.getElementById('clear-logs');
@@ -39,6 +51,13 @@ let state = {
   intervalMin: 10,
   intervalMax: 60,
   autoDownloadImages: true,
+  downloadIntervalType: 'fixed',
+  fixedBeforeDownload: 3,
+  fixedAfterDownload: 2,
+  minBeforeDownload: 2,
+  maxBeforeDownload: 5,
+  minAfterDownload: 1,
+  maxAfterDownload: 3,
   timeRemaining: 0,
   lastError: null,
   logs: [],
@@ -127,6 +146,16 @@ function updatePromptList() {
 
 // Fungsi untuk memperbarui UI pengaturan
 function updateSettingsUI() {
+  // Add/remove class to hide old interval settings when auto download is active
+  const settingsContainer = document.querySelector('#settings-tab');
+  if (settingsContainer) {
+    if (state.autoDownloadImages) {
+      settingsContainer.classList.add('auto-download-active');
+    } else {
+      settingsContainer.classList.remove('auto-download-active');
+    }
+  }
+  
   // Interval type
   const intervalTypeRadio = document.querySelector(`input[name="interval-type"][value="${state.intervalType}"]`);
   if (intervalTypeRadio) {
@@ -153,6 +182,40 @@ function updateSettingsUI() {
   
   // Set auto download
   autoDownloadCheckbox.checked = state.autoDownloadImages;
+  
+  // Show/hide download settings based on auto download toggle
+  if (state.autoDownloadImages) {
+    downloadSettings.classList.remove('hidden');
+  } else {
+    downloadSettings.classList.add('hidden');
+  }
+  
+  // Download interval type
+  const downloadIntervalTypeRadio = document.querySelector(`input[name="download-interval-type"][value="${state.downloadIntervalType}"]`);
+  if (downloadIntervalTypeRadio) {
+    downloadIntervalTypeRadio.checked = true;
+  }
+  
+  // Show/hide download interval settings
+  if (state.downloadIntervalType === 'fixed') {
+    if (fixedBeforeDownloadSetting) fixedBeforeDownloadSetting.classList.remove('hidden');
+    if (randomBeforeDownloadSetting) randomBeforeDownloadSetting.classList.add('hidden');
+    if (fixedAfterDownloadSetting) fixedAfterDownloadSetting.classList.remove('hidden');
+    if (randomAfterDownloadSetting) randomAfterDownloadSetting.classList.add('hidden');
+  } else {
+    if (fixedBeforeDownloadSetting) fixedBeforeDownloadSetting.classList.add('hidden');
+    if (randomBeforeDownloadSetting) randomBeforeDownloadSetting.classList.remove('hidden');
+    if (fixedAfterDownloadSetting) fixedAfterDownloadSetting.classList.add('hidden');
+    if (randomAfterDownloadSetting) randomAfterDownloadSetting.classList.remove('hidden');
+  }
+  
+  // Set download interval values
+  if (fixedBeforeDownloadInput) fixedBeforeDownloadInput.value = state.fixedBeforeDownload;
+  if (fixedAfterDownloadInput) fixedAfterDownloadInput.value = state.fixedAfterDownload;
+  if (minBeforeDownloadInput) minBeforeDownloadInput.value = state.minBeforeDownload;
+  if (maxBeforeDownloadInput) maxBeforeDownloadInput.value = state.maxBeforeDownload;
+  if (minAfterDownloadInput) minAfterDownloadInput.value = state.minAfterDownload;
+  if (maxAfterDownloadInput) maxAfterDownloadInput.value = state.maxAfterDownload;
 }
 
 // Fungsi untuk memperbarui UI log
@@ -245,7 +308,14 @@ function startAutomation() {
         intervalMax: parseInt(maxIntervalInput.value, 10) || 60,
         maxRepeats: parseInt(maxRepeatsInput.value, 10) || 1,
         enableGlobalRepeat: globalRepeatCheckbox.checked,
-        autoDownloadImages: autoDownloadCheckbox.checked
+        autoDownloadImages: autoDownloadCheckbox.checked,
+        downloadIntervalType: state.downloadIntervalType,
+        fixedBeforeDownload: parseInt(fixedBeforeDownloadInput.value, 10) || 3,
+        fixedAfterDownload: parseInt(fixedAfterDownloadInput.value, 10) || 2,
+        minBeforeDownload: parseInt(minBeforeDownloadInput.value, 10) || 2,
+        maxBeforeDownload: parseInt(maxBeforeDownloadInput.value, 10) || 5,
+        minAfterDownload: parseInt(minAfterDownloadInput.value, 10) || 1,
+        maxAfterDownload: parseInt(maxAfterDownloadInput.value, 10) || 3
       };
       
       chrome.runtime.sendMessage({ 
@@ -297,7 +367,14 @@ function saveSettings() {
     intervalMax: parseInt(maxIntervalInput.value, 10) || 60,
     maxRepeats: parseInt(maxRepeatsInput.value, 10) || 1,
     enableGlobalRepeat: globalRepeatCheckbox.checked,
-    autoDownloadImages: autoDownloadCheckbox.checked
+    autoDownloadImages: autoDownloadCheckbox.checked,
+    downloadIntervalType: state.downloadIntervalType,
+    fixedBeforeDownload: parseInt(fixedBeforeDownloadInput.value, 10) || 3,
+    fixedAfterDownload: parseInt(fixedAfterDownloadInput.value, 10) || 2,
+    minBeforeDownload: parseInt(minBeforeDownloadInput.value, 10) || 2,
+    maxBeforeDownload: parseInt(maxBeforeDownloadInput.value, 10) || 5,
+    minAfterDownload: parseInt(minAfterDownloadInput.value, 10) || 1,
+    maxAfterDownload: parseInt(maxAfterDownloadInput.value, 10) || 3
   };
   
   // Validasi
@@ -354,6 +431,20 @@ intervalTypeRadios.forEach(radio => {
     state.intervalType = radio.value;
     updateUI();
   });
+});
+
+// Download interval type switching
+downloadIntervalTypeRadios.forEach(radio => {
+  radio.addEventListener('change', () => {
+    state.downloadIntervalType = radio.value;
+    updateUI();
+  });
+});
+
+// Auto download toggle
+autoDownloadCheckbox.addEventListener('change', () => {
+  state.autoDownloadImages = autoDownloadCheckbox.checked;
+  updateUI();
 });
 
 // Start button

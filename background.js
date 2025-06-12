@@ -13,6 +13,13 @@ let state = {
   intervalMin: 10, // dalam detik
   intervalMax: 60, // dalam detik
   autoDownloadImages: true,
+  downloadIntervalType: 'fixed',
+  fixedBeforeDownload: 3,
+  fixedAfterDownload: 2,
+  minBeforeDownload: 2,
+  maxBeforeDownload: 5,
+  minAfterDownload: 1,
+  maxAfterDownload: 3,
   timerId: null,
   timeRemaining: 0,
   lastError: null,
@@ -81,35 +88,117 @@ function getNextInterval() {
   }
 }
 
-// Fungsi untuk memeriksa apakah content script aktif di tab
-async function pingContentScript(tabId) {
+// Fungsi untuk ping content script dengan retry
+async function pingContentScript(tabId, retryCount = 0, maxRetries = 3) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error('Timeout: Content script tidak merespons dalam 5 detik'));
     }, 5000);
     
     try {
-      console.log(`Melakukan ping ke content script di tab ${tabId}...`);
-      chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
-        clearTimeout(timeout);
-        
+      console.log(`Mencoba ping content script di tab ${tabId} (percobaan ${retryCount + 1}/${maxRetries + 1})`);
+      
+      // Periksa apakah tab masih ada dan aktif
+      chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
-          const errorMessage = chrome.runtime.lastError.message || 'Unknown error';
-          console.error(`Error saat ping content script di tab ${tabId}: ${errorMessage}`);
-          reject(new Error(`Content script tidak aktif: ${errorMessage}`));
-        } else if (response && response.success) {
-          console.log(`Content script aktif di tab ${tabId}: ${response.message || 'OK'}`);
-          resolve(true);
-        } else {
-          console.error(`Content script merespons dengan data tidak valid di tab ${tabId}:`, response);
-          reject(new Error('Content script tidak merespons dengan benar'));
+          console.error(`Tab ${tabId} tidak ditemukan:`, chrome.runtime.lastError.message);
+          reject(new Error(`Tab tidak ditemukan: ${chrome.runtime.lastError.message}`));
+          return;
         }
+        
+        if (!tab || tab.status !== 'complete') {
+          console.log(`Tab ${tabId} belum selesai loading, menunggu...`);
+          if (retryCount < maxRetries) {
+            setTimeout(() => {
+              pingContentScript(tabId, retryCount + 1, maxRetries)
+                .then(resolve)
+                .catch(reject);
+            }, 1000);
+          } else {
+            reject(new Error('Tab tidak selesai loading dalam waktu yang ditentukan'));
+          }
+          return;
+        }
+        
+        // Kirim pesan ke content script
+        chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
+          clearTimeout(timeout);
+          
+          if (chrome.runtime.lastError) {
+            const errorMessage = chrome.runtime.lastError.message || 'Unknown error';
+            console.error(`Error saat ping content script di tab ${tabId}: ${errorMessage}`);
+            
+            // Jika error menunjukkan koneksi terputus dan masih dalam batas retry
+            if (retryCount < maxRetries && !errorMessage.includes('Receiving end does not exist')) {
+              console.log(`Mencoba kembali ping dalam ${(retryCount + 1) * 1000}ms...`);
+              setTimeout(() => {
+                pingContentScript(tabId, retryCount + 1, maxRetries)
+                  .then(resolve)
+                  .catch(reject);
+              }, (retryCount + 1) * 1000);
+            } else {
+              // Jika sudah mencapai batas retry atau error fatal
+              console.log(`Mencoba inject ulang content script ke tab ${tabId}`);
+              chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                files: ['content.js']
+              }, () => {
+                if (chrome.runtime.lastError) {
+                  addLog(`Error: Tidak dapat inject content script: ${chrome.runtime.lastError.message}`);
+                  reject(new Error(`Content script tidak dapat diinjeksi: ${chrome.runtime.lastError.message}`));
+                } else {
+                  console.log(`Content script berhasil diinjeksi ulang ke tab ${tabId}`);
+                  // Coba ping lagi setelah inject
+                  setTimeout(() => {
+                    chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
+                      if (chrome.runtime.lastError || !response || !response.success) {
+                        reject(new Error('Content script masih tidak merespons setelah inject ulang'));
+                      } else {
+                        resolve(true);
+                      }
+                    });
+                  }, 500);
+                }
+              });
+            }
+          } else if (response && response.success) {
+            console.log(`Content script aktif di tab ${tabId}: ${response.message || 'OK'}`);
+            resolve(true);
+          } else {
+            console.error(`Content script merespons dengan data tidak valid di tab ${tabId}:`, response);
+            
+            // Jika respons tidak valid dan masih dalam batas retry
+            if (retryCount < maxRetries) {
+              console.log(`Mencoba kembali ping dalam ${(retryCount + 1) * 1000}ms...`);
+              setTimeout(() => {
+                pingContentScript(tabId, retryCount + 1, maxRetries)
+                  .then(resolve)
+                  .catch(reject);
+              }, (retryCount + 1) * 1000);
+            } else {
+              addLog(`Error: Respons tidak valid dari content script di tab ${tabId}`);
+              reject(new Error('Content script tidak merespons dengan benar'));
+            }
+          }
+        });
       });
     } catch (error) {
       clearTimeout(timeout);
       const errorMessage = error.message || 'Unknown error';
       console.error(`Exception saat ping content script di tab ${tabId}:`, errorMessage);
-      reject(new Error(`Exception saat ping content script: ${errorMessage}`));
+      
+      // Jika terjadi exception dan masih dalam batas retry
+      if (retryCount < maxRetries) {
+        console.log(`Mencoba kembali ping dalam ${(retryCount + 1) * 1000}ms...`);
+        setTimeout(() => {
+          pingContentScript(tabId, retryCount + 1, maxRetries)
+            .then(resolve)
+            .catch(reject);
+        }, (retryCount + 1) * 1000);
+      } else {
+        addLog(`Error: Exception saat menghubungi content script di tab ${tabId}: ${errorMessage}`);
+        reject(new Error(`Exception saat ping content script: ${errorMessage}`));
+      }
     }
   });
 }
@@ -574,10 +663,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'downloadImage':
       console.log('Menerima permintaan unduh gambar:', message);
       
+      // Tambahkan penanganan error koneksi
+      if (chrome.runtime.lastError) {
+        console.error('Error koneksi saat menerima pesan:', chrome.runtime.lastError);
+        addLog(`Error: Koneksi dengan content script: ${chrome.runtime.lastError.message}`);
+        try {
+          sendResponse({ success: false, error: 'connection_error', message: chrome.runtime.lastError.message });
+        } catch (e) {
+          console.error('Tidak dapat mengirim respons karena error koneksi:', e);
+        }
+        break;
+      }
+      
       if (!message.imageUrl) {
         console.error('URL gambar tidak valid');
         addLog('Error: URL gambar tidak valid');
-        sendResponse({ success: false, error: 'URL gambar tidak valid' });
+        try {
+          sendResponse({ success: false, error: 'invalid_url', message: 'URL gambar tidak valid' });
+        } catch (e) {
+          console.error('Tidak dapat mengirim respons:', e);
+        }
         break;
       }
       
@@ -594,21 +699,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (chrome.runtime.lastError) {
               console.error('Error saat mengunduh gambar:', chrome.runtime.lastError);
               addLog(`Error: Gagal mengunduh gambar: ${chrome.runtime.lastError.message}`);
-              sendResponse({ success: false, error: chrome.runtime.lastError.message });
+              try {
+                sendResponse({ success: false, error: 'download_error', message: chrome.runtime.lastError.message });
+              } catch (e) {
+                console.error('Tidak dapat mengirim respons setelah error download:', e);
+              }
             } else {
               console.log('Gambar berhasil diunduh dengan ID:', downloadId);
               addLog(`Gambar diunduh: ${filename}`);
-              sendResponse({ success: true, downloadId });
+              try {
+                sendResponse({ success: true, downloadId, filename });
+              } catch (e) {
+                console.error('Tidak dapat mengirim respons setelah download berhasil:', e);
+              }
             }
           });
         } catch (error) {
           console.error('Exception saat mengunduh gambar:', error);
           addLog(`Error: Exception saat mengunduh gambar: ${error.message}`);
-          sendResponse({ success: false, error: error.message });
+          try {
+            sendResponse({ success: false, error: 'exception', message: error.message });
+          } catch (e) {
+            console.error('Tidak dapat mengirim respons setelah exception:', e);
+          }
         }
       } else {
         console.log('Auto download gambar tidak aktif, melewati unduhan');
-        sendResponse({ success: true, skipped: true });
+        try {
+          sendResponse({ success: true, skipped: true, message: 'Auto download disabled' });
+        } catch (e) {
+          console.error('Tidak dapat mengirim respons untuk skip download:', e);
+        }
       }
       
       return true; // Untuk mendukung respons asinkron

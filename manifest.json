@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Prompt Automator",
+  "name": "Automator",
   "version": "1.0",
   "description": "Otomatisasi input prompt dari file Excel ke Chat Gemini dengan interval waktu yang dapat dikonfigurasi",
   "permissions": [
