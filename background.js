@@ -572,15 +572,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
       
     case 'downloadImage':
-      if (state.autoDownloadImages) {
-        chrome.downloads.download({
-          url: message.imageUrl,
-          filename: message.filename || `gemini_image_${Date.now()}.png`,
-          saveAs: false
-        });
-        addLog(`Gambar diunduh: ${message.filename || 'gemini_image.png'}`);
+      console.log('Menerima permintaan unduh gambar:', message);
+      
+      if (!message.imageUrl) {
+        console.error('URL gambar tidak valid');
+        addLog('Error: URL gambar tidak valid');
+        sendResponse({ success: false, error: 'URL gambar tidak valid' });
+        break;
       }
-      sendResponse({ success: true });
+      
+      if (state.autoDownloadImages) {
+        console.log('Auto download gambar aktif, memulai unduhan...');
+        try {
+          const filename = message.filename || `gemini_image_${Date.now()}.png`;
+          
+          chrome.downloads.download({
+            url: message.imageUrl,
+            filename: filename,
+            saveAs: false
+          }, downloadId => {
+            if (chrome.runtime.lastError) {
+              console.error('Error saat mengunduh gambar:', chrome.runtime.lastError);
+              addLog(`Error: Gagal mengunduh gambar: ${chrome.runtime.lastError.message}`);
+              sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+              console.log('Gambar berhasil diunduh dengan ID:', downloadId);
+              addLog(`Gambar diunduh: ${filename}`);
+              sendResponse({ success: true, downloadId });
+            }
+          });
+        } catch (error) {
+          console.error('Exception saat mengunduh gambar:', error);
+          addLog(`Error: Exception saat mengunduh gambar: ${error.message}`);
+          sendResponse({ success: false, error: error.message });
+        }
+      } else {
+        console.log('Auto download gambar tidak aktif, melewati unduhan');
+        sendResponse({ success: true, skipped: true });
+      }
+      
+      return true; // Untuk mendukung respons asinkron
       break;
   }
   

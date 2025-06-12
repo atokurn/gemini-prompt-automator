@@ -205,7 +205,7 @@ function startImageMonitoring() {
   // Karena kita berada di ISOLATED world, kita perlu menggunakan pendekatan yang berbeda
   // Kita akan menyuntikkan script ke halaman yang akan memantau gambar
   const scriptToInject = document.createElement('script');
-  scriptToInject.textContent = '
+  scriptToInject.textContent = `
     (function() {
       try {
         console.log("Script pemantauan gambar berjalan");
@@ -228,8 +228,9 @@ function startImageMonitoring() {
           
           // Selector untuk tombol download dari element.md
           const downloadButtonSelectors = [
-            // Selector yang lebih generik untuk tombol download
+            // Selector spesifik dari element.md
             "download-generated-image-button > button",
+            // Selector yang lebih generik untuk tombol download
             "button.download-button",
             "button[aria-label=\"Download\"]",
             "button[aria-label=\"Unduh\"]",
@@ -239,8 +240,19 @@ function startImageMonitoring() {
             "generated-image button",
             // Selector untuk tombol download dengan span
             "download-generated-image-button > button > span.mdc-button__label",
-            "download-generated-image-button > button > span.mat-mdc-button-persistent-ripple.mdc-button__ripple"
+            "download-generated-image-button > button > span.mat-mdc-button-persistent-ripple.mdc-button__ripple",
+            // Selector lebih lengkap dari element.md
+            "#model-response-message-contentr_fb5c6fb8f1a895a2 > p:nth-child(2) > div > response-element > generated-image > single-image > div > div > div > download-generated-image-button > button",
+            // Selector yang lebih umum berdasarkan element.md
+            "response-element > generated-image > single-image > div > div > div > download-generated-image-button > button",
+            // Selector yang lebih umum
+            "generated-image > single-image > div > div > div > download-generated-image-button > button",
+            "single-image > div > div > div > download-generated-image-button > button",
+            "div > div > div > download-generated-image-button > button"
           ];
+          
+          // Set untuk melacak tombol yang sudah diklik
+          const processedButtons = new Set();
           
           let responseImages = [];
           for (const selector of responseSelectors) {
@@ -261,36 +273,55 @@ function startImageMonitoring() {
             });
           }
           
-          // Coba cari tombol download terlebih dahulu
-          let downloadButton = null;
+          // Coba cari semua tombol download
+          let downloadButtons = [];
           let downloadClicked = false;
           
           // Coba semua selector untuk tombol download
           for (const selector of downloadButtonSelectors) {
-            const button = document.querySelector(selector);
-            if (button) {
-              downloadButton = button;
-              console.log("Tombol download ditemukan dengan selector: " + selector);
-              break;
+            const buttons = document.querySelectorAll(selector);
+            if (buttons && buttons.length > 0) {
+              console.log(`Ditemukan ${buttons.length} tombol download dengan selector: ${selector}`);
+              downloadButtons = [...downloadButtons, ...Array.from(buttons)];
             }
           }
           
-          if (downloadButton) {
-            console.log("Tombol download ditemukan, mencoba mengklik...");
-            try {
-              // Klik tombol download
-              downloadButton.click();
-              downloadClicked = true;
-              console.log("Tombol download berhasil diklik");
-            } catch (e) {
-              console.error("Gagal mengklik tombol download:", e);
-              // Lanjutkan dengan metode alternatif
-            }
+          console.log(`Total ${downloadButtons.length} tombol download ditemukan`);
+          
+          // Coba klik semua tombol download yang belum diproses
+          if (downloadButtons.length > 0) {
+            downloadButtons.forEach(button => {
+              // Gunakan dataset untuk mengidentifikasi tombol secara unik
+              const buttonId = button.textContent + '_' + (button.getAttribute('aria-label') || '');
+              
+              // Periksa apakah tombol sudah diproses sebelumnya
+              if (!processedButtons.has(buttonId)) {
+                console.log(`Mencoba mengklik tombol download: ${buttonId}`);
+                try {
+                  // Tandai tombol sebagai sudah diproses
+                  processedButtons.add(buttonId);
+                  
+                  // Klik tombol download
+                  button.click();
+                  downloadClicked = true;
+                  console.log(`Tombol download berhasil diklik: ${buttonId}`);
+                  
+                  // Tambahkan event untuk mendeteksi apakah unduhan berhasil
+                  setTimeout(() => {
+                    console.log(`Memeriksa status unduhan untuk tombol: ${buttonId}`);
+                  }, 1000);
+                } catch (e) {
+                  console.error(`Gagal mengklik tombol download ${buttonId}:`, e);
+                }
+              } else {
+                console.log(`Tombol download sudah diproses sebelumnya: ${buttonId}`);
+              }
+            });
           } else {
-            console.log("Tombol download tidak ditemukan, menggunakan metode alternatif");
+            console.log("Tidak ada tombol download yang ditemukan, menggunakan metode alternatif");
           }
           
-          // Jika tombol download tidak ditemukan atau gagal diklik, gunakan metode alternatif
+          // Jika tidak ada tombol download yang berhasil diklik, gunakan metode alternatif
           if (!downloadClicked) {
             responseImages.forEach(img => {
               // Periksa apakah gambar sudah diproses
@@ -353,11 +384,47 @@ function startImageMonitoring() {
           attributeFilter: ["src"]
         });
         
-        // Hentikan pemantauan setelah 2 menit
+        console.log("Pemantauan gambar dan tombol download dimulai");
+        
+        // Jalankan pemeriksaan manual setiap 2 detik untuk menangkap tombol yang mungkin terlewat
+        const manualCheckInterval = setInterval(function() {
+          console.log("Menjalankan pemeriksaan manual untuk tombol download...");
+          
+          // Coba semua selector untuk tombol download
+          for (const selector of downloadButtonSelectors) {
+            const buttons = document.querySelectorAll(selector);
+            if (buttons && buttons.length > 0) {
+              console.log(`Pemeriksaan manual: Ditemukan ${buttons.length} tombol download dengan selector: ${selector}`);
+              
+              Array.from(buttons).forEach(button => {
+                // Gunakan dataset untuk mengidentifikasi tombol secara unik
+                const buttonId = button.textContent + '_' + (button.getAttribute('aria-label') || '');
+                
+                // Periksa apakah tombol sudah diproses sebelumnya
+                if (!processedButtons.has(buttonId)) {
+                  console.log(`Pemeriksaan manual: Mencoba mengklik tombol download: ${buttonId}`);
+                  try {
+                    // Tandai tombol sebagai sudah diproses
+                    processedButtons.add(buttonId);
+                    
+                    // Klik tombol download
+                    button.click();
+                    console.log(`Pemeriksaan manual: Tombol download berhasil diklik: ${buttonId}`);
+                  } catch (e) {
+                    console.error(`Pemeriksaan manual: Gagal mengklik tombol download ${buttonId}:`, e);
+                  }
+                }
+              });
+            }
+          }
+        }, 2000); // Periksa setiap 2 detik
+        
+        // Hentikan pemantauan setelah 5 menit
         setTimeout(function() {
           observer.disconnect();
-          console.log("Pemantauan gambar dihentikan setelah 2 menit");
-        }, 2 * 60 * 1000);
+          clearInterval(manualCheckInterval);
+          console.log("Pemantauan gambar dan tombol download dihentikan setelah 5 menit");
+        }, 5 * 60 * 1000); // 5 menit
         
         // Beri tahu bahwa pemantauan gambar dimulai
         document.dispatchEvent(new CustomEvent("gemini-automator-monitoring-started"));
@@ -365,31 +432,137 @@ function startImageMonitoring() {
         console.error("Error dalam script pemantauan gambar:", error);
       }
     })();
-  ';
+  `;
   
   // Tambahkan event listener untuk menangkap gambar dari script yang diinjeksi
   const handleImage = (event) => {
+    console.log('Event gemini-automator-image diterima:', event);
     const imageData = event.detail;
-    if (imageData && imageData.imageUrl && !processedImages.has(imageData.imageUrl)) {
-      // Tandai gambar sebagai sudah diproses
-      processedImages.add(imageData.imageUrl);
-      
-      console.log('Gambar terdeteksi:', imageData.filename);
-      
-      // Kirim pesan ke background script untuk mengunduh gambar
-      chrome.runtime.sendMessage({
-        action: 'downloadImage',
-        imageUrl: imageData.imageUrl,
-        filename: imageData.filename
-      });
+    
+    if (!imageData) {
+      console.error('Event tidak memiliki detail yang valid');
+      return;
+    }
+    
+    if (!imageData.imageUrl) {
+      console.error('Event tidak memiliki URL gambar yang valid');
+      return;
+    }
+    
+    if (processedImages.has(imageData.imageUrl)) {
+      console.log('Gambar sudah diproses sebelumnya, melewati:', imageData.imageUrl);
+      return;
+    }
+    
+    // Tandai gambar sebagai sudah diproses
+    processedImages.add(imageData.imageUrl);
+    
+    console.log('Gambar terdeteksi, mengirim ke background script:', imageData.filename);
+    
+    // Kirim pesan ke background script untuk mengunduh gambar
+    chrome.runtime.sendMessage({
+      action: 'downloadImage',
+      imageUrl: imageData.imageUrl,
+      filename: imageData.filename
+    }, response => {
+      if (response && response.success) {
+        console.log('Background script berhasil menerima permintaan unduh gambar');
+      } else if (response && response.skipped) {
+        console.log('Unduhan gambar dilewati karena auto download tidak aktif');
+      } else {
+        console.error('Error saat mengirim permintaan unduh gambar ke background script:', response);
+        
+        // Jika gagal mengirim ke background script, coba klik tombol download sebagai fallback
+        console.log('Mencoba metode fallback: klik tombol download');
+        
+        // Tambahkan script untuk mencoba klik tombol download
+        const fallbackScript = document.createElement('script');
+        fallbackScript.textContent = `
+          (function() {
+            try {
+              console.log("Script fallback berjalan untuk klik tombol download");
+              
+              // Coba semua selector untuk tombol download
+              const downloadButtonSelectors = [
+                "download-generated-image-button > button",
+                "button.download-button",
+                "button[aria-label=\"Download\"]",
+                "button[aria-label=\"Unduh\"]",
+                "response-element > generated-image > single-image > div > div > div > download-generated-image-button > button"
+              ];
+              
+              let buttonFound = false;
+              
+              for (const selector of downloadButtonSelectors) {
+                const buttons = document.querySelectorAll(selector);
+                if (buttons && buttons.length > 0) {
+                  console.log("Fallback: Tombol download ditemukan dengan selector: " + selector);
+                  
+                  // Klik semua tombol yang ditemukan
+                  buttons.forEach(button => {
+                    try {
+                      button.click();
+                      buttonFound = true;
+                      console.log("Fallback: Tombol download berhasil diklik");
+                    } catch (e) {
+                      console.error("Fallback: Gagal mengklik tombol download:", e);
+                    }
+                  });
+                  
+                  if (buttonFound) break;
+                }
+              }
+              
+              if (!buttonFound) {
+                console.log("Fallback: Tidak ada tombol download yang ditemukan");
+              }
+            } catch (error) {
+              console.error("Error dalam script fallback:", error);
+            }
+          })();
+        `;
+        
+        // Injeksi script fallback
+        if (document.head) {
+          document.head.appendChild(fallbackScript);
+        } else if (document.documentElement) {
+          document.documentElement.appendChild(fallbackScript);
+        }
+        
+        // Hapus script setelah dijalankan
+        setTimeout(() => {
+          if (fallbackScript.parentNode) {
+            fallbackScript.parentNode.removeChild(fallbackScript);
+          }
+        }, 100);
+      }
+    });
+  };
+  
+  // Event listener untuk menangkap event ketika tombol download berhasil diklik
+  const handleDownloadButtonClicked = (event) => {
+    console.log('Event gemini-automator-download-clicked diterima:', event);
+    const buttonData = event.detail;
+    
+    if (buttonData && buttonData.buttonId) {
+      console.log(`Tombol download berhasil diklik: ${buttonData.buttonId}`);
     }
   };
   
   // Tambahkan event listener untuk menangkap hasil dari script yang diinjeksi
   document.addEventListener('gemini-automator-image', handleImage);
+  document.addEventListener('gemini-automator-download-clicked', handleDownloadButtonClicked);
   
   // Injeksi script ke halaman
-  document.head.appendChild(scriptToInject);
+  if (document.head) {
+    document.head.appendChild(scriptToInject);
+    console.log('Script pemantauan gambar berhasil diinjeksi ke head');
+  } else if (document.documentElement) {
+    document.documentElement.appendChild(scriptToInject);
+    console.log('Script pemantauan gambar berhasil diinjeksi ke documentElement');
+  } else {
+    console.error('Tidak dapat menginjeksi script pemantauan gambar: document.head dan document.documentElement tidak tersedia');
+  }
   
   // Hapus script setelah dijalankan
   setTimeout(() => {
