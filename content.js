@@ -133,9 +133,10 @@ function insertPromptToGemini(prompt) {
         setTimeout(() => {
           resolve();
           
-          // Mulai pemantauan gambar setelah mengirim prompt
-          // Modifikasi: Panggil fungsi baru untuk menunggu tombol stop hilang
-          waitForStopButtonAndDownload(); 
+          // Prompt sudah dikirim, MutationObserver akan mendeteksi
+          // perubahan DOM dan memulai proses download otomatis
+          // ketika tombol stop hilang (generating selesai)
+          console.log('Prompt berhasil dikirim, menunggu MutationObserver mendeteksi generating selesai...');
         }, 1000);
       };
       
@@ -180,7 +181,194 @@ function insertPromptToGemini(prompt) {
 // Variabel untuk melacak gambar yang sudah diunduh
 let processedImages = new Set();
 
-// Fungsi untuk menunggu tombol stop hilang lalu mengunduh gambar
+// Fungsi untuk menunggu tombol stop muncul, lalu menunggu sampai hilang, kemudian download
+async function waitForStopButtonToAppearThenDisappear(retryCount = 0) {
+  console.log('Memulai proses menunggu tombol stop muncul, lalu hilang...');
+
+  const maxRetries = 30; // Maksimal 60 detik menunggu tombol stop muncul
+  const retryDelay = 2000; // Jeda antar percobaan dalam milidetik
+
+  // Fungsi untuk memeriksa apakah tombol stop ada (menandakan Gemini sedang generating)
+  function isStopButtonPresent() {
+    const stopButtonSelectors = [
+      // Selector spesifik dari element.md untuk tombol stop Gemini
+      '#app-root > main > side-navigation-v2 > bard-sidenav-container > bard-sidenav-content > div.content-wrapper > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.visible > button > div > mat-icon',
+      '#app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.is-mobile-device.visible > button > span.mat-mdc-button-persistent-ripple.mdc-icon-button__ripple',
+      '#app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.is-mobile-device.visible.disabled > button',
+      
+      // Selector umum untuk tombol stop
+      'button[aria-label*="Stop"]',
+      'button[aria-label*="Hentikan"]',
+      'button[data-testid="stop-button"]',
+      // Indikator loading juga bisa dianggap sebagai "stop button" aktif
+      '.loading',
+      '.generating',
+      '.spinner',
+      '[aria-label*="generating"]',
+      '[aria-label*="loading"]',
+      '.mat-progress-spinner',
+    ];
+    
+    for (const selector of stopButtonSelectors) {
+      try {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          for (const element of elements) {
+            const style = window.getComputedStyle(element);
+            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+              return true;
+            }
+          }
+        }
+      } catch (e) { /* Abaikan error selector tidak valid */ }
+    }
+    return false;
+  }
+
+  // Fase 1: Tunggu tombol stop muncul (menandakan Gemini mulai generating)
+  if (!isStopButtonPresent()) {
+    console.log('Tombol stop belum muncul, menunggu Gemini mulai generating...');
+    if (retryCount < maxRetries) {
+      setTimeout(() => waitForStopButtonToAppearThenDisappear(retryCount + 1), retryDelay);
+    } else {
+      console.error('Timeout menunggu tombol stop muncul. Melanjutkan ke download.');
+      // Lanjutkan ke download meskipun tombol stop tidak muncul
+      await executeDownloadWithInterval();
+    }
+    return;
+  }
+
+  console.log('Tombol stop terdeteksi! Gemini sedang generating. Sekarang menunggu sampai selesai...');
+  
+  // Fase 2: Tunggu tombol stop hilang (menandakan Gemini selesai generating)
+  await waitForStopButtonToDisappear();
+}
+
+// Fungsi untuk menunggu tombol stop hilang
+async function waitForStopButtonToDisappear(retryCount = 0) {
+  console.log('Menunggu tombol stop hilang...');
+
+  const maxRetries = 60; // Maksimal 2 menit menunggu tombol stop hilang
+  const retryDelay = 2000; // Jeda antar percobaan dalam milidetik
+
+  // Fungsi untuk memeriksa apakah tombol stop masih ada
+  function isStopButtonPresent() {
+    const stopButtonSelectors = [
+      '#app-root > main > side-navigation-v2 > bard-sidenav-container > bard-sidenav-content > div.content-wrapper > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.visible > button > div > mat-icon',
+      '#app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.is-mobile-device.visible > button > span.mat-mdc-button-persistent-ripple.mdc-icon-button__ripple',
+      '#app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > input-container > div > input-area-v2 > div > div > div.trailing-actions-wrapper.ng-tns-c2433840608-3 > div > div.mat-mdc-tooltip-trigger.send-button-container.ng-tns-c2433840608-3.inner.ng-star-inserted.is-mobile-device.visible.disabled > button',
+      'button[aria-label*="Stop"]',
+      'button[aria-label*="Hentikan"]',
+      'button[data-testid="stop-button"]',
+      '.loading',
+      '.generating',
+      '.spinner',
+      '[aria-label*="generating"]',
+      '[aria-label*="loading"]',
+      '.mat-progress-spinner',
+    ];
+    
+    for (const selector of stopButtonSelectors) {
+      try {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          for (const element of elements) {
+            const style = window.getComputedStyle(element);
+            if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+              return true;
+            }
+          }
+        }
+      } catch (e) { /* Abaikan error selector tidak valid */ }
+    }
+    return false;
+  }
+
+  if (isStopButtonPresent()) {
+    console.log('Tombol stop masih ada, Gemini masih generating...');
+    if (retryCount < maxRetries) {
+      setTimeout(() => waitForStopButtonToDisappear(retryCount + 1), retryDelay);
+    } else {
+      console.error('Timeout menunggu tombol stop hilang. Melanjutkan ke download.');
+      await executeDownloadWithInterval();
+    }
+    return;
+  }
+
+  console.log('Tombol stop sudah hilang! Gemini selesai generating. Memulai proses download...');
+  
+  // Fase 3: Jalankan download dengan interval
+  await executeDownloadWithInterval();
+}
+
+// Fungsi untuk mendapatkan interval sebelum download dari state
+function getBeforeDownloadInterval(state) {
+  if (state.downloadIntervalType === 'fixed') {
+    return (state.fixedBeforeDownload || 3) * 1000;
+  } else {
+    const min = Math.max(1, state.minBeforeDownload || 2);
+    const max = Math.max(min, state.maxBeforeDownload || 5);
+    const randomValue = Math.random() * (max - min) + min;
+    return Math.floor(randomValue) * 1000;
+  }
+}
+
+// Fungsi untuk mendapatkan interval setelah download dari state
+function getAfterDownloadInterval(state) {
+  if (state.downloadIntervalType === 'fixed') {
+    return (state.fixedAfterDownload || 2) * 1000;
+  } else {
+    const min = Math.max(1, state.minAfterDownload || 1);
+    const max = Math.max(min, state.maxAfterDownload || 3);
+    const randomValue = Math.random() * (max - min) + min;
+    return Math.floor(randomValue) * 1000;
+  }
+}
+
+// Fungsi untuk menjalankan download dengan interval yang benar
+async function executeDownloadWithInterval() {
+  try {
+    // Periksa apakah auto download aktif dan dapatkan pengaturan interval
+    const response = await chrome.runtime.sendMessage({ action: 'getState' });
+    const currentPromptIndex = response?.state?.currentPromptIndex;
+
+    if (response && response.state && response.state.autoDownloadImages) {
+      console.log('Auto download aktif, menggunakan interval download yang dikonfigurasi');
+      
+      // 3. Interval sebelum download
+      const beforeDownloadTime = getBeforeDownloadInterval(response.state);
+      console.log(`Menunggu ${beforeDownloadTime}ms sebelum download...`);
+      await new Promise(resolve => setTimeout(resolve, beforeDownloadTime));
+      
+      // 4. Cari tombol download lalu klik download
+      console.log('Memulai proses pencarian dan download gambar...');
+      const downloadSuccess = await findAndClickDownloadButtonWithRetry();
+      
+      if (downloadSuccess) {
+        // 5. Interval setelah download
+        const afterDownloadTime = getAfterDownloadInterval(response.state);
+        console.log(`Menunggu ${afterDownloadTime}ms setelah download...`);
+        await new Promise(resolve => setTimeout(resolve, afterDownloadTime));
+        chrome.runtime.sendMessage({ action: "downloadImageStatus", status: "success", promptIndex: currentPromptIndex });
+      } else {
+        console.warn('Download tidak berhasil, interval setelah download dilewati.');
+        chrome.runtime.sendMessage({ action: "downloadImageStatus", status: "error", message: "Tombol download tidak ditemukan atau gagal diklik.", promptIndex: currentPromptIndex });
+      }
+      console.log('Proses download dengan interval selesai');
+    } else {
+      console.log('Auto download tidak aktif, tidak ada proses download otomatis.');
+      // Kirim pesan bahwa download dilewati karena tidak aktif
+      chrome.runtime.sendMessage({ action: "downloadImageStatus", status: "skipped", promptIndex: currentPromptIndex });
+    }
+  } catch (error) {
+    console.error('Error saat menjalankan download dengan interval:', error);
+    const stateResponse = await chrome.runtime.sendMessage({ action: 'getState' });
+    const promptIndex = stateResponse?.state?.currentPromptIndex || 'unknown';
+    chrome.runtime.sendMessage({ action: "downloadImageStatus", status: "error", message: `Error saat download: ${error.message}`, promptIndex });
+  }
+}
+
+// Fungsi untuk menunggu tombol stop hilang lalu mengunduh gambar (fungsi lama, tetap dipertahankan untuk kompatibilitas)
 async function waitForStopButtonAndDownload(retryCount = 0) {
   console.log('Memulai proses menunggu tombol stop hilang dan unduh gambar...');
 
@@ -238,85 +426,203 @@ async function waitForStopButtonAndDownload(retryCount = 0) {
     return;
   }
 
-  console.log('Tombol stop/loading tidak terdeteksi. Memberi jeda 2 detik sebelum mencari tombol download.');
-  await new Promise(resolve => setTimeout(resolve, 2000)); // Jeda 2 detik
-
-  // Panggil fungsi untuk mencari dan mengklik tombol download dengan logika retry
-  await findAndClickDownloadButtonWithRetry();
+  console.log('Tombol stop/loading tidak terdeteksi. Memulai proses download dengan interval...');
+  
+  // Periksa apakah auto download aktif dan dapatkan pengaturan interval
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'getState' });
+    
+    if (response && response.state && response.state.autoDownloadImages) {
+      console.log('Auto download aktif, menggunakan interval download yang dikonfigurasi');
+      
+      // 2. Interval sebelum download
+      const beforeDownloadTime = getBeforeDownloadInterval(response.state);
+      console.log(`Menunggu ${beforeDownloadTime}ms sebelum download...`);
+      await new Promise(resolve => setTimeout(resolve, beforeDownloadTime));
+      
+      // 3. Cari tombol download lalu klik download
+      console.log('Memulai proses pencarian dan download gambar...');
+      await findAndClickDownloadButtonWithRetry();
+      
+      // 4. Interval setelah download
+      const afterDownloadTime = getAfterDownloadInterval(response.state);
+      console.log(`Menunggu ${afterDownloadTime}ms setelah download...`);
+      await new Promise(resolve => setTimeout(resolve, afterDownloadTime));
+      
+      console.log('Proses download dengan interval selesai');
+    } else {
+      console.log('Auto download tidak aktif, menggunakan jeda default 2 detik');
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Jeda default 2 detik
+      
+      // Panggil fungsi untuk mencari dan mengklik tombol download dengan logika retry
+      await findAndClickDownloadButtonWithRetry();
+    }
+  } catch (error) {
+    console.error('Error saat mendapatkan pengaturan state:', error);
+    // Fallback ke jeda default jika terjadi error
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await findAndClickDownloadButtonWithRetry();
+  }
 }
 
 // Fungsi untuk mencari dan mengklik tombol download dengan logika retry
-async function findAndClickDownloadButtonWithRetry(attempt = 0) {
-  const maxAttempts = 5;
-  const delayBetweenAttempts = 2000; // Jeda 2 detik antar percobaan
+async function findAndClickDownloadButtonWithRetry(retryCount = 0) {
+  const maxRetries = 15; // Maksimal 15 percobaan (total 30 detik jika delay 2 detik)
+  const retryDelay = 2000;
+  
+  console.log(`Mencari tombol download gambar (percobaan ${retryCount + 1}/${maxRetries})...`);
+  
+  const downloadButtonSelectors = [
+    // Prioritaskan selector yang lebih spesifik dan umum untuk download gambar
+    'button[aria-label*="Download image" i]',
+    'button[aria-label*="Unduh gambar" i]',
+    'button[aria-label*="Download all images" i]',
+    'button[aria-label*="Unduh semua gambar" i]',
+    'button[data-testid*="download-image" i]',
+    'button[title*="Download image" i]',
+    'button[title*="Unduh gambar" i]',
+    // Selector dari element.md (jika masih relevan dan spesifik untuk gambar)
+    // '#app-root > main > side-navigation-v2 > bard-sidenav-container > bard-sidenav-content > div.content-wrapper > div > div.content-container > chat-window > div > model-response-container > model-response > div.response-container-wrapper > div.response-container.has-footer > div.response-container-content.text-content-container > div.response-container-footer > div > div.response-actions > div:nth-child(1) > div > button',
+    // '#app-root > main > side-navigation-v2 > mat-sidenav-container > mat-sidenav-content > div > div.content-container > chat-window > div > model-response-container > model-response > div.response-container-wrapper > div.response-container.has-footer > div.response-container-content.text-content-container > div.response-container-footer > div > div.response-actions > div:nth-child(1) > div > button',
+    
+    // Selector umum yang mungkin menangkap tombol download gambar
+    'button[aria-label*="Download" i]',
+    'button[aria-label*="Unduh" i]',
+    'button[data-testid*="download" i]',
+    'button[title*="Download" i]',
+    'button[title*="Unduh" i]',
+    'a[download][href*="blob:"]', // Link download yang biasanya untuk file dinamis
+    'a[download][href*="data:image"]', // Link download data URI gambar
+    '.download-button',
+    '.download-image-button',
+    // Cari tombol di dalam elemen yang mungkin berisi gambar
+    '.image-container button[aria-label*="Download" i]',
+    '.image-wrapper button[aria-label*="Download" i]',
+    'img[alt*="generated image"] ~ button[aria-label*="Download" i]', // Tombol download dekat gambar
+    'div[role="button"][aria-label*="Download image" i]',
+    'div[role="button"][aria-label*="Unduh gambar" i]'
+  ];
+  
+  let downloadButton = null;
+  let foundSelector = '';
 
-  console.log(`Mencoba mencari tombol download (percobaan ${attempt + 1}/${maxAttempts})`);
+  // Iterasi melalui semua response-container untuk mencari tombol download
+  // model-response, .response-container, .message-content, .chat-message, .message-row
+  const responseContainers = document.querySelectorAll('model-response, .response-container, .message-content, .chat-message, .message-row, div[class*="response"], div[class*="message"]');
+  if (responseContainers.length === 0) {
+    console.log('Tidak ada response container yang relevan ditemukan.');
+  }
 
-  // Fungsi untuk mengunduh gambar menggunakan tombol download native
-  async function downloadGeneratedImagesInternal() {
-    try {
-      console.log('Memulai proses download gambar internal...');
-      
-      // Reset daftar gambar yang sudah diproses untuk setiap upaya baru
-      processedImages.clear(); 
+  for (const container of Array.from(responseContainers).reverse()) { // Cek dari yang terbaru/terbawah
+    for (const selector of downloadButtonSelectors) {
+      try {
+        const elements = container.querySelectorAll(selector);
+        for (const element of elements) {
+          const style = window.getComputedStyle(element);
+          if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && element.offsetHeight > 0 && element.offsetWidth > 0) {
+            const ariaLabel = (element.getAttribute('aria-label') || '').toLowerCase();
+            const title = (element.getAttribute('title') || '').toLowerCase();
+            const text = (element.textContent || '').toLowerCase();
+            const elementClass = (element.className || '').toLowerCase();
 
-      // Cari semua gambar yang dihasilkan (gunakan selector yang lebih umum jika perlu)
-      const images = document.querySelectorAll('img[src*="googleusercontent.com"], img[src*="gemini"], img[alt*="Generated"], img[alt*="Image"]');
-      
-      if (images.length === 0) {
-        console.log('Tidak ada gambar yang dihasilkan ditemukan pada percobaan ini.');
-        return false; // Kembalikan false jika tidak ada gambar
-      }
-      
-      console.log(`Ditemukan ${images.length} gambar potensial yang dihasilkan`);
-      let downloadedAtLeastOne = false;
-      
-      for (let i = 0; i < images.length; i++) {
-        const img = images[i];
-        
-        if (processedImages.has(img.src)) {
-          console.log(`Melewati gambar ${i + 1} - sudah diproses: ${img.src}`);
-          continue;
-        }
-        
-        // Lewati jika gambar terlalu kecil (kemungkinan elemen UI)
-        // Periksa naturalWidth dan naturalHeight setelah gambar dimuat
-        await new Promise(resolve => {
-            if (img.complete) resolve();
-            else img.onload = img.onerror = resolve;
-        });
-        if (img.naturalWidth < 50 || img.naturalHeight < 50) {
-          console.log(`Melewati gambar kecil ${i + 1} (${img.naturalWidth}x${img.naturalHeight})`);
-          continue;
-        }
-        
-        try {
-          img.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          await new Promise(r => setTimeout(r, 500));
-          
-          let downloadButton = null;
-          console.log(`Mencari tombol download untuk gambar ${i + 1}`);
-          
-          let parent = img.closest('div[jsmodel]'); // Cari parent yang lebih relevan
-          if (!parent) parent = img.parentElement;
-
-          for (let level = 0; level < 7 && parent; level++) { // Tingkatkan level pencarian
-            // Gunakan pendekatan pencarian tombol download yang lebih komprehensif
+            // Heuristik untuk memastikan ini adalah tombol download GAMBAR
+            const isImageKeywordPresent = [
+              'image', 'gambar', 'img', 'foto', 'picture', 'photo',
+              'unduh gambar', 'download image',
+              'save image', 'simpan gambar'
+            ].some(keyword => 
+              ariaLabel.includes(keyword) || 
+              title.includes(keyword) || 
+              text.includes(keyword) || 
+              elementClass.includes(keyword) ||
+              selector.toLowerCase().includes(keyword)
+            );
             
-            // Gunakan selector spesifik yang diberikan user
-            const specificSelector = '#model-response-message-contentr_65d95208b040de17 > p:nth-child(2) > div > response-element > generated-image > single-image > div > div > div > download-generated-image-button > button > span.mdc-button__label > div > mat-icon';
-            
-            // 1. Coba selector spesifik terlebih dahulu
-            try {
-              const specificElement = parent.querySelector(specificSelector);
-              if (specificElement) {
-                downloadButton = specificElement.closest('button');
-                if (downloadButton && !downloadButton.disabled) {
-                  console.log(`Ditemukan tombol download via selector spesifik di level ${level}`);
+            let isLikelyImageDownload = isImageKeywordPresent;
+            // Jika tidak ada kata kunci gambar eksplisit, tapi selectornya umum (download/unduh)
+            // dan ada elemen gambar di dekatnya (dalam container yang sama), anggap itu tombol download gambar.
+            if (!isImageKeywordPresent && (ariaLabel.includes('download') || ariaLabel.includes('unduh') || title.includes('download') || title.includes('unduh'))) {
+                if (container.querySelector('img, [role="img"], .image-viewer, .thumbnail, canvas, picture')) {
+                    isLikelyImageDownload = true;
                 }
+            }
+
+            if (isLikelyImageDownload) {
+              // Cek apakah gambar ini sudah diproses (berdasarkan src gambar terdekat)
+              const closestImage = element.closest('model-response, .response-container, .message-content, .chat-message, .message-row, div[class*="response"], div[class*="message"]')?.querySelector('img');
+              const imgSrc = closestImage?.src;
+              if (imgSrc && processedImages.has(imgSrc)) {
+                console.log('Gambar ini (src:', imgSrc,') sudah diunduh sebelumnya, mencari tombol download lain...');
+                continue; // Lanjut ke elemen berikutnya, mungkin ada gambar lain di halaman
               }
-            } catch (e) {
-              console.log('Error dengan selector spesifik:', e.message);
+              downloadButton = element;
+              foundSelector = selector;
+              console.log('Tombol download gambar ditemukan dengan selector:', foundSelector, 'pada container:', container);
+              break;
+            }
+          }
+        }
+        if (downloadButton) break;
+      } catch (e) {
+        // console.warn(`Selector tidak valid atau error saat query: ${selector}`, e.message);
+      }
+    }
+    if (downloadButton) break; // Jika sudah ketemu di satu container, keluar dari loop container
+  }
+  
+  if (downloadButton) {
+    console.log('Tombol download ditemukan, mencoba mengklik...');
+    try {
+      downloadButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await new Promise(resolve => setTimeout(resolve, 500)); 
+      
+      const clickEvent = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true
+      });
+      downloadButton.dispatchEvent(clickEvent);
+      console.log('Tombol download berhasil diklik.');
+      
+      // Tandai gambar sebagai sudah diproses (jika ada src gambar terdekat)
+      const closestImage = downloadButton.closest('model-response, .response-container, .message-content, .chat-message, .message-row, div[class*="response"], div[class*="message"]')?.querySelector('img');
+      const imgSrc = closestImage?.src;
+      if (imgSrc) {
+        processedImages.add(imgSrc);
+        console.log('Gambar dengan src:', imgSrc, 'ditandai sebagai telah diproses.');
+      } else {
+        console.log('Tidak ada src gambar terdekat yang ditemukan untuk ditandai.');
+      }
+      return true; 
+    } catch (error) {
+      console.error('Error saat mengklik tombol download:', error);
+      return false; 
+    }
+  } else {
+    console.warn('Tombol download gambar tidak ditemukan di semua response container yang relevan.');
+    if (retryCount < maxRetries - 1) {
+      console.log(`Mencoba lagi dalam ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return await findAndClickDownloadButtonWithRetry(retryCount + 1);
+    } else {
+      console.error('Gagal menemukan tombol download gambar setelah beberapa percobaan.');
+      return false; 
+    }
+  }
+}
+            // 1. Coba selector spesifik yang sudah ada sebelumnya
+            if (!downloadButton) {
+                try {
+                  const specificElement = parent.querySelector(specificSelector); // specificSelector dari argumen fungsi
+                  if (specificElement) {
+                    downloadButton = specificElement.closest('button');
+                    if (downloadButton && !downloadButton.disabled) {
+                      console.log(`Ditemukan tombol download via selector spesifik yang ada di level ${level}`);
+                    }
+                  }
+                } catch (e) {
+                  console.log('Error dengan selector spesifik yang ada:', e.message);
+                }
             }
             
             // 2. Fallback ke pencarian berdasarkan mat-icon dengan fonticon download
@@ -367,9 +673,16 @@ async function findAndClickDownloadButtonWithRetry(attempt = 0) {
             }
             if (downloadButton && !downloadButton.disabled) {
               console.log(`Ditemukan tombol download di level ${level} untuk gambar ${i + 1}`);
-              break;
+              // Break tidak diperlukan di sini karena kondisi if sudah menangani
+              // apakah akan melanjutkan ke parent berikutnya atau tidak.
+              // Loop while akan berhenti jika downloadButton ditemukan dan tidak disabled.
             }
-            parent = parent.parentElement;
+            // Hanya lanjutkan ke parent berikutnya jika tombol belum ditemukan atau ditemukan tapi disabled
+            if (!(downloadButton && !downloadButton.disabled)) {
+              parent = parent.parentElement;
+            } else {
+              break; // Keluar dari loop while jika tombol valid ditemukan
+            }
           }
           
           if (downloadButton && !downloadButton.disabled) {
@@ -377,13 +690,13 @@ async function findAndClickDownloadButtonWithRetry(attempt = 0) {
             downloadButton.click();
             processedImages.add(img.src);
             downloadedAtLeastOne = true;
-            console.log(\`Gambar \${i + 1} berhasil diklik untuk diunduh: \${img.src}\`);
+            console.log(`Gambar ${i + 1} berhasil diklik untuk diunduh: ${img.src}`);
             await new Promise(r => setTimeout(r, 1000)); // Jeda antar unduhan
           } else {
-            console.log(\`Tombol download tidak ditemukan untuk gambar \${i + 1} - melewati tanpa fallback\`);
+            console.log(`Tombol download tidak ditemukan untuk gambar ${i + 1} - melewati tanpa fallback`);
           }
         } catch (e) {
-          console.error(\`Error saat memproses gambar \${i + 1}: \${e.message}\`, e);
+          console.error(`Error saat memproses gambar ${i + 1}: ${e.message}`, e);
         }
       }
       
@@ -592,7 +905,7 @@ function startImageMonitoring() {
                 return;
               }
               
-              console.log(\`Ditemukan \${images.length} gambar potensial yang dihasilkan\`);
+              console.log(`Ditemukan ${images.length} gambar potensial yang dihasilkan`);
               let downloadedCount = 0;
               let skippedCount = 0;
               
@@ -602,14 +915,14 @@ function startImageMonitoring() {
                 
                 // Periksa apakah gambar ini sudah diunduh
                 if (downloadedImages.has(img.src)) {
-                  console.log(\`Melewati gambar \${i + 1} - sudah diunduh: \${img.src}\`);
+                  console.log(`Melewati gambar ${i + 1} - sudah diunduh: ${img.src}`);
                   skippedCount++;
                   continue;
                 }
                 
                 // Lewati jika gambar terlalu kecil (kemungkinan elemen UI)
                 if (img.naturalWidth < 100 || img.naturalHeight < 100) {
-                  console.log(\`Melewati gambar kecil \${i + 1} (\${img.naturalWidth}x\${img.naturalHeight})\`);
+                  console.log(`Melewati gambar kecil ${i + 1} (${img.naturalWidth}x${img.naturalHeight})`);
                   continue;
                 }
                 
@@ -620,12 +933,12 @@ function startImageMonitoring() {
                   
                   // Coba cari tombol download di dekat gambar ini
                   let downloadButton = null;
-                  console.log(\`Mencari tombol download untuk gambar \${i + 1}\`);
+                  console.log(`Mencari tombol download untuk gambar ${i + 1}`);
                   
                   // Cari tombol download di container parent gambar
                   let parent = img.parentElement;
                   for (let level = 0; level < 5 && parent; level++) {
-                    console.log(\`Memeriksa parent level \${level} untuk gambar \${i + 1}\`);
+                    console.log(`Memeriksa parent level ${level} untuk gambar ${i + 1}`);
                     
                     // Gunakan selector spesifik yang diberikan user
                      const specificSelector = '#model-response-message-contentr_65d95208b040de17 > p:nth-child(2) > div > response-element > generated-image > single-image > div > div > div > download-generated-image-button > button > span.mdc-button__label > div > mat-icon';
@@ -636,7 +949,7 @@ function startImageMonitoring() {
                        if (specificElement) {
                          downloadButton = specificElement.closest('button');
                          if (downloadButton && !downloadButton.disabled) {
-                           console.log(\`Ditemukan tombol download via selector spesifik di level \${level}\`);
+                           console.log(`Ditemukan tombol download via selector spesifik di level ${level}`);
                          }
                        }
                      } catch (e) {
@@ -651,14 +964,14 @@ function startImageMonitoring() {
                        );
                        
                        if (downloadIcons.length > 0) {
-                         console.log(\`Ditemukan \${downloadIcons.length} ikon download di level \${level}\`);
+                         console.log(`Ditemukan ${downloadIcons.length} ikon download di level ${level}`);
                          
                          for (const icon of downloadIcons) {
                            // Cari button parent dari ikon
                            const buttonParent = icon.closest('button');
                            if (buttonParent && !buttonParent.disabled) {
                              downloadButton = buttonParent;
-                             console.log(\`Ditemukan tombol download via pencarian ikon di level \${level}\`);
+                             console.log(`Ditemukan tombol download via pencarian ikon di level ${level}`);
                              break;
                            }
                          }
@@ -672,7 +985,7 @@ function startImageMonitoring() {
                          const btn = downloadComponent.querySelector('button');
                          if (btn && !btn.disabled) {
                            downloadButton = btn;
-                           console.log(\`Ditemukan tombol download via komponen di level \${level}\`);
+                           console.log(`Ditemukan tombol download via komponen di level ${level}`);
                          }
                        }
                      }
@@ -686,13 +999,13 @@ function startImageMonitoring() {
                        );
                        
                        if (downloadButton && !downloadButton.disabled) {
-                         console.log(\`Ditemukan tombol download via atribut di level \${level}\`);
+                         console.log(`Ditemukan tombol download via atribut di level ${level}`);
                        }
                      }
                     
                     // Jika sudah menemukan tombol download yang valid, keluar dari loop
                     if (downloadButton && !downloadButton.disabled) {
-                      console.log(\`Ditemukan tombol download yang valid di level \${level} untuk gambar \${i + 1}\`);
+                      console.log(`Ditemukan tombol download yang valid di level ${level} untuk gambar ${i + 1}`);
                       break;
                     }
                     
@@ -701,11 +1014,11 @@ function startImageMonitoring() {
                   
                   // Jika masih belum menemukan tombol download setelah pencarian komprehensif
                   if (!downloadButton) {
-                    console.log(\`Tidak ditemukan tombol download untuk gambar \${i + 1} setelah pencarian komprehensif\`);
+                    console.log(`Tidak ditemukan tombol download untuk gambar ${i + 1} setelah pencarian komprehensif`);
                   }
                   
                   if (downloadButton && downloadButton.offsetParent !== null && !downloadButton.disabled) {
-                    console.log(\`Ditemukan tombol download yang valid untuk gambar \${i + 1}, mencoba mengunduh\`);
+                    console.log(`Ditemukan tombol download yang valid untuk gambar ${i + 1}, mencoba mengunduh`);
                     
                     // Hover di atas gambar untuk memastikan tombol download terlihat
                     img.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
@@ -720,7 +1033,7 @@ function startImageMonitoring() {
                     
                     // Klik tombol download
                     downloadButton.click();
-                    console.log(\`Mengunduh gambar \${i + 1} menggunakan tombol native\`);
+                    console.log(`Mengunduh gambar ${i + 1} menggunakan tombol native`);
                     downloadedCount++;
                     
                     // Tambahkan ke set gambar yang sudah diunduh untuk mencegah duplikasi
@@ -730,21 +1043,21 @@ function startImageMonitoring() {
                     await new Promise(r => setTimeout(r, 1500));
                   } else {
                     if (downloadButton) {
-                      console.log(\`Tombol download ditemukan tapi tidak valid untuk gambar \${i + 1}: offsetParent=\${downloadButton.offsetParent}, disabled=\${downloadButton.disabled}\`);
+                      console.log(`Tombol download ditemukan tapi tidak valid untuk gambar ${i + 1}: offsetParent=${downloadButton.offsetParent}, disabled=${downloadButton.disabled}`);
                     } else {
-                      console.log(\`Tidak ada tombol download ditemukan untuk gambar \${i + 1} - melewati tanpa fallback\`);
+                      console.log(`Tidak ada tombol download ditemukan untuk gambar ${i + 1} - melewati tanpa fallback`);
                     }
                     // Tidak menggunakan fallback, hanya lewati gambar ini
                   }
                   
                 } catch (error) {
-                  console.error(\`Error memproses gambar \${i + 1}:\`, error);
+                  console.error(`Error memproses gambar ${i + 1}:`, error);
                   // Tidak menggunakan fallback, hanya lewati gambar ini
                 }
               }
               
-              console.log(\`Berhasil memproses \${downloadedCount} gambar, melewati \${skippedCount} gambar yang sudah diunduh\`);
-              console.log(\`Total gambar unik yang diunduh sejauh ini: \${downloadedImages.size}\`);
+              console.log(`Berhasil memproses ${downloadedCount} gambar, melewati ${skippedCount} gambar yang sudah diunduh`);
+              console.log(`Total gambar unik yang diunduh sejauh ini: ${downloadedImages.size}`);
               
             } catch (error) {
               console.error('Error dalam downloadGeneratedImages:', error);
@@ -765,7 +1078,7 @@ function startImageMonitoring() {
               
               // Coba unduh menggunakan fetch terlebih dahulu (penanganan CORS yang lebih baik)
               try {
-                console.log(\`Mencoba unduh fetch untuk gambar \${index}\`);
+                console.log(`Mencoba unduh fetch untuk gambar ${index}`);
                 const response = await fetch(img.src, {
                   mode: 'cors',
                   credentials: 'omit'
@@ -779,7 +1092,7 @@ function startImageMonitoring() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = \`gemini-generated-image-\${Date.now()}-\${index}.png\`;
+                    a.download = `gemini-generated-image-${Date.now()}-${index}.png`;
                     a.style.display = 'none';
                     
                     // Trigger download
@@ -790,21 +1103,21 @@ function startImageMonitoring() {
                     // Bersihkan
                     setTimeout(() => URL.revokeObjectURL(url), 1000);
                     
-                    console.log(\`Mengunduh gambar \${index} menggunakan metode fetch\`);
+                    console.log(`Mengunduh gambar ${index} menggunakan metode fetch`);
                     return;
                   } else {
                     throw new Error('Blob kosong diterima');
                   }
                 } else {
-                  throw new Error(\`HTTP \${response.status}: \${response.statusText}\`);
+                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
               } catch (fetchError) {
-                console.log(\`Fetch gagal untuk gambar \${index}, mencoba metode canvas:\`, fetchError.message);
+                console.log(`Fetch gagal untuk gambar ${index}, mencoba metode canvas:`, fetchError.message);
               }
               
               // Fallback ke metode canvas
               try {
-                console.log(\`Mencoba unduh canvas untuk gambar \${index}\`);
+                console.log(`Mencoba unduh canvas untuk gambar ${index}`);
                 
                 // Coba beberapa konfigurasi CORS
                 const corsConfigs = ['anonymous', 'use-credentials', null];
@@ -819,7 +1132,7 @@ function startImageMonitoring() {
                     
                     await new Promise((resolve, reject) => {
                       const timeout = setTimeout(() => {
-                        reject(new Error(\`Timeout load gambar CORS dengan \${corsConfig || 'no CORS'}\`));
+                        reject(new Error(`Timeout load gambar CORS dengan ${corsConfig || 'no CORS'}`));
                       }, 5000);
                       
                       corsImg.onload = () => {
@@ -829,17 +1142,17 @@ function startImageMonitoring() {
                       
                       corsImg.onerror = () => {
                         clearTimeout(timeout);
-                        reject(new Error(\`Gambar CORS gagal dimuat dengan \${corsConfig || 'no CORS'}\`));
+                        reject(new Error(`Gambar CORS gagal dimuat dengan ${corsConfig || 'no CORS'}`));
                       };
                       
                       corsImg.src = img.src;
                     });
                     
                     // Jika sampai di sini, gambar berhasil dimuat
-                    console.log(\`Gambar \${index} dimuat dengan konfigurasi CORS: \${corsConfig || 'no CORS'}\`);
+                    console.log(`Gambar ${index} dimuat dengan konfigurasi CORS: ${corsConfig || 'no CORS'}`);
                     break;
                   } catch (corsError) {
-                    console.log(\`Konfigurasi CORS \${corsConfig || 'no CORS'} gagal untuk gambar \${index}:\`, corsError.message);
+                    console.log(`Konfigurasi CORS ${corsConfig || 'no CORS'} gagal untuk gambar ${index}:`, corsError.message);
                     corsImg = null;
                   }
                 }
@@ -870,7 +1183,7 @@ function startImageMonitoring() {
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = \`gemini-generated-image-\${Date.now()}-\${index}.png\`;
+                      a.download = `gemini-generated-image-${Date.now()}-${index}.png`;
                       a.style.display = 'none';
                       
                       // Trigger download
@@ -881,33 +1194,33 @@ function startImageMonitoring() {
                       // Bersihkan
                       setTimeout(() => URL.revokeObjectURL(url), 1000);
                       
-                      console.log(\`Mengunduh gambar \${index} menggunakan fallback canvas\`);
+                      console.log(`Mengunduh gambar ${index} menggunakan fallback canvas`);
                     } else {
-                      console.error(\`Gagal membuat blob untuk gambar \${index}\`);
+                      console.error(`Gagal membuat blob untuk gambar ${index}`);
                       // Coba unduh langsung sebagai upaya terakhir
                       const a = document.createElement('a');
                       a.href = img.src;
-                      a.download = \`gemini-image-\${Date.now()}-\${index}.png\`;
+                      a.download = `gemini-image-${Date.now()}-${index}.png`;
                       a.style.display = 'none';
                       
                       document.body.appendChild(a);
                       a.click();
                       document.body.removeChild(a);
                       
-                      console.log(\`Mengunduh gambar \${index} menggunakan fallback langsung setelah kegagalan blob canvas\`);
+                      console.log(`Mengunduh gambar ${index} menggunakan fallback langsung setelah kegagalan blob canvas`);
                     }
                     resolve();
                   }, 'image/png', 0.95);
                 });
                 
               } catch (canvasError) {
-                console.log(\`Metode canvas gagal untuk gambar \${index}, mencoba unduh langsung:\`, canvasError.message);
+                console.log(`Metode canvas gagal untuk gambar ${index}, mencoba unduh langsung:`, canvasError.message);
                 
                 // Fallback terakhir: coba unduh langsung tanpa membuka tab baru
                 try {
                   const a = document.createElement('a');
                   a.href = img.src;
-                  a.download = \`gemini-image-\${Date.now()}-\${index}.png\`;
+                  a.download = `gemini-image-${Date.now()}-${index}.png`;
                   a.style.display = 'none';
                   a.rel = 'noopener noreferrer';
                   
@@ -915,22 +1228,22 @@ function startImageMonitoring() {
                   a.click();
                   document.body.removeChild(a);
                   
-                  console.log(\`Mengunduh gambar \${index} menggunakan fallback langsung\`);
+                  console.log(`Mengunduh gambar ${index} menggunakan fallback langsung`);
                   return;
                 } catch (directError) {
-                  console.log(\`Unduh langsung gagal untuk gambar \${index}:\`, directError.message);
+                  console.log(`Unduh langsung gagal untuk gambar ${index}:`, directError.message);
                 }
               }
               
             } catch (error) {
-              console.error(\`Semua metode unduh gagal untuk gambar \${index}:\`, error);
+              console.error(`Semua metode unduh gagal untuk gambar ${index}:`, error);
               
               // Upaya terakhir: buka gambar di tab baru
               try {
                 window.open(img.src, '_blank', 'noopener,noreferrer');
-                console.log(\`Membuka gambar \${index} di tab baru sebagai upaya terakhir\`);
+                console.log(`Membuka gambar ${index} di tab baru sebagai upaya terakhir`);
               } catch (openError) {
-                console.error(\`Bahkan membuka di tab baru gagal untuk gambar \${index}:\`, openError);
+                console.error(`Bahkan membuka di tab baru gagal untuk gambar ${index}:`, openError);
                 throw error;
               }
             }
@@ -949,7 +1262,7 @@ function startImageMonitoring() {
                 return;
               }
               
-              console.log(\`Ditemukan \${images.length} gambar potensial yang dihasilkan\`);
+              console.log(`Ditemukan ${images.length} gambar potensial yang dihasilkan`);
               
               for (let i = 0; i < images.length; i++) {
                 const img = images[i];
@@ -962,7 +1275,7 @@ function startImageMonitoring() {
                 try {
                   await downloadSingleImageFallback(img, i + 1);
                 } catch (error) {
-                  console.error(\`Error mengunduh gambar \${i + 1}:\`, error);
+                  console.error(`Error mengunduh gambar ${i + 1}:`, error);
                 }
               }
               
@@ -978,20 +1291,10 @@ function startImageMonitoring() {
               const response = await chrome.runtime.sendMessage({ action: 'getState' });
               
               if (response && response.state && response.state.autoDownloadImages) {
-                console.log('Auto download aktif, memulai proses dengan interval before dan after download');
+                console.log('Auto download aktif, memulai proses waitForStopButtonToAppearThenDisappear');
                 
-                // Tunggu interval before download
-                const beforeDownloadTime = getBeforeDownloadInterval(response.state);
-                console.log(`Menunggu ${beforeDownloadTime}ms sebelum download...`);
-                await new Promise(resolve => setTimeout(resolve, beforeDownloadTime));
-                
-                // Jalankan fungsi download gambar
-                await downloadGeneratedImages();
-                
-                // Tunggu interval after download
-                const afterDownloadTime = getAfterDownloadInterval(response.state);
-                console.log(`Menunggu ${afterDownloadTime}ms setelah download...`);
-                await new Promise(resolve => setTimeout(resolve, afterDownloadTime));
+                // Panggil fungsi baru yang mengimplementasikan alur kerja yang benar
+                await waitForStopButtonToAppearThenDisappear();
                 
                 console.log('Proses download dengan interval selesai');
               } else {
@@ -1035,10 +1338,11 @@ function startImageMonitoring() {
             
             mutations.forEach((mutation) => {
               if (mutation.type === 'childList') {
-                // Periksa apakah ada node baru yang ditambahkan
+                // JANGAN memicu download ketika gambar baru muncul karena itu berarti generating masih berlangsung
+                // Hanya fokus pada tombol stop yang hilang sebagai indikator generating selesai
                 mutation.addedNodes.forEach((node) => {
                   if (node.nodeType === Node.ELEMENT_NODE) {
-                    // Periksa apakah node mengandung gambar yang dihasilkan atau tombol stop hilang
+                    // Hanya log untuk debugging, tapi jangan trigger download
                     if (node.querySelector && (
                       node.querySelector('img[src*="googleusercontent.com"]') || 
                       node.querySelector('img[src*="gemini"]') ||
@@ -1048,9 +1352,8 @@ function startImageMonitoring() {
                       node.querySelector('generated-image') ||
                       node.querySelector('single-image')
                     )) {
-                      console.log('Elemen gambar atau download baru terdeteksi:', node.tagName || node.className);
-                      reasonForProcessing.push('Gambar baru terdeteksi');
-                      shouldProcess = true;
+                      console.log('Elemen gambar baru terdeteksi (generating masih berlangsung):', node.tagName || node.className);
+                      // TIDAK memicu shouldProcess = true karena generating masih berlangsung
                     }
                   }
                 });
@@ -1089,17 +1392,30 @@ function startImageMonitoring() {
                 });
               }
               
-              // Periksa perubahan atribut yang mungkin menandakan perubahan status tombol
+              // Periksa perubahan atribut yang menandakan tombol stop hilang (generating selesai)
               if (mutation.type === 'attributes') {
                 const target = mutation.target;
                 if (target.tagName === 'BUTTON' || target.closest('button')) {
                   const button = target.tagName === 'BUTTON' ? target : target.closest('button');
+                  
+                  // Hanya proses jika ini adalah tombol stop/send yang berubah dari aktif ke tidak aktif
                   if (mutation.attributeName === 'disabled' || 
                       mutation.attributeName === 'aria-label' ||
                       mutation.attributeName === 'class') {
-                    console.log('Atribut tombol berubah:', mutation.attributeName, button.className);
-                    reasonForProcessing.push('Status tombol berubah');
-                    shouldProcess = true;
+                    
+                    // Periksa apakah ini adalah tombol stop yang menjadi disabled (generating selesai)
+                    const isStopButton = button.querySelector('mat-icon') || 
+                                       button.getAttribute('aria-label')?.includes('Stop') ||
+                                       button.getAttribute('aria-label')?.includes('Hentikan') ||
+                                       button.closest('.send-button-container');
+                    
+                    if (isStopButton && (button.disabled || button.classList.contains('disabled'))) {
+                      console.log('Tombol stop menjadi disabled (generating selesai):', mutation.attributeName, button.className);
+                      reasonForProcessing.push('Tombol stop disabled - generating selesai');
+                      shouldProcess = true;
+                    } else {
+                      console.log('Perubahan atribut tombol lain (diabaikan):', mutation.attributeName, button.className);
+                    }
                   }
                 }
               }
@@ -1107,17 +1423,19 @@ function startImageMonitoring() {
             
             if (shouldProcess) {
               console.log('Alasan pemrosesan:', reasonForProcessing.join(', '));
-              console.log("Perubahan DOM terdeteksi, memproses konten baru dalam 3 detik");
-              // Tunggu lebih lama untuk memastikan DOM sudah stabil dan tombol stop benar-benar hilang
-              setTimeout(processNewContent, 3000);
+              console.log("Perubahan DOM terdeteksi (indikasi generating selesai), memulai alur waitForStopButtonToAppearThenDisappear...");
+              // Langsung panggil waitForStopButtonToAppearThenDisappear untuk memulai alur unduhan
+              // Fungsi ini sudah menghandle pengecekan ulang tombol stop dan interval
+              waitForStopButtonToAppearThenDisappear();
             }
           });
           
-          // Jalankan pemeriksaan pertama setelah delay untuk memastikan halaman siap
-          setTimeout(() => {
-            console.log('Pemeriksaan awal: memeriksa status tombol stop dan gambar...');
-            processNewContent();
-          }, 3000);
+          // HAPUS pemeriksaan awal otomatis karena bisa memicu download sebelum generating selesai
+          // Hanya andalkan MutationObserver untuk deteksi yang akurat
+          // setTimeout(() => {
+          //   console.log('Pemeriksaan awal: memeriksa status tombol stop dan gambar...');
+          //   processNewContent();
+          // }, 3000);
           
           // Mulai observasi
           observer.observe(document.body, {
@@ -1130,16 +1448,16 @@ function startImageMonitoring() {
           
           console.log("Observer DOM dimulai untuk memantau gambar yang dihasilkan baru");
           
-          // Juga jalankan pemeriksaan manual setiap 5 detik sebagai backup
-          // Ini akan memeriksa apakah tombol stop hilang dan ada gambar untuk diunduh
-          const manualCheckInterval = setInterval(() => {
-            console.log('Pemeriksaan manual: memeriksa status tombol stop dan gambar...');
-            processNewContent();
-          }, 5000);
+          // HAPUS pemeriksaan manual otomatis karena bisa memicu download sebelum generating selesai
+          // Hanya andalkan MutationObserver yang sudah diperbaiki untuk deteksi yang akurat
+          // const manualCheckInterval = setInterval(() => {
+          //   console.log('Pemeriksaan manual: memeriksa status tombol stop dan gambar...');
+          //   processNewContent();
+          // }, 5000);
           
-          // Hentikan interval setelah 3 menit
+          // Hentikan observer setelah 3 menit
           setTimeout(() => {
-            clearInterval(manualCheckInterval);
+            // clearInterval(manualCheckInterval); // Tidak ada lagi manual interval
             observer.disconnect();
             console.log('Pemantauan gambar otomatis dihentikan');
           }, 3 * 60 * 1000);

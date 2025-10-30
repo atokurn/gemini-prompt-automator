@@ -78,14 +78,37 @@ function setStatus(newStatus, errorMessage = null) {
   saveState();
 }
 
-// Fungsi untuk mendapatkan interval waktu berikutnya
-function getNextInterval() {
+// Fungsi untuk mendapatkan interval waktu dasar antar prompt
+function getBasePromptInterval() {
   if (state.intervalType === 'fixed') {
     return state.intervalFixed * 1000; // Konversi ke milidetik
   } else {
     // Random interval antara min dan max
     return (Math.floor(Math.random() * (state.intervalMax - state.intervalMin + 1)) + state.intervalMin) * 1000;
   }
+}
+
+// Fungsi untuk mendapatkan interval waktu berikutnya (mungkin masih digunakan oleh popup atau bagian lain)
+// Untuk penjadwalan prompt utama, gunakan getBasePromptInterval setelah download cycle selesai.
+function getNextInterval() {
+  // Jika auto download aktif, interval ini mencerminkan total durasi siklus download (untuk tampilan UI misalnya)
+  if (state.autoDownloadImages) {
+    if (state.downloadIntervalType === 'fixed') {
+      const beforeTime = (state.fixedBeforeDownload || 3) * 1000;
+      const afterTime = (state.fixedAfterDownload || 2) * 1000;
+      return beforeTime + afterTime + getBasePromptInterval(); // Total siklus + interval dasar berikutnya
+    } else {
+      const minBefore = Math.max(1, state.minBeforeDownload || 2);
+      const maxBefore = Math.max(minBefore, state.maxBeforeDownload || 5);
+      const minAfter = Math.max(1, state.minAfterDownload || 1);
+      const maxAfter = Math.max(minAfter, state.maxAfterDownload || 3);
+      const randomBefore = Math.floor(Math.random() * (maxBefore - minBefore + 1) + minBefore) * 1000;
+      const randomAfter = Math.floor(Math.random() * (maxAfter - minAfter + 1) + minAfter) * 1000;
+      return randomBefore + randomAfter + getBasePromptInterval(); // Total siklus + interval dasar berikutnya
+    }
+  }
+  // Jika auto download tidak aktif, sama dengan base interval
+  return getBasePromptInterval();
 }
 
 // Fungsi untuk ping content script dengan retry
@@ -129,14 +152,45 @@ async function pingContentScript(tabId, retryCount = 0, maxRetries = 3) {
             console.error(`Error saat ping content script di tab ${tabId}: ${errorMessage}`);
             
             // Jika error menunjukkan koneksi terputus dan masih dalam batas retry
-            if (retryCount < maxRetries && !errorMessage.includes('Receiving end does not exist')) {
+            // atau jika errornya adalah 'Receiving end does not exist', kita coba inject ulang
+            if (retryCount < maxRetries) {
+              if (errorMessage.includes('Receiving end does not exist')) {
+                // Langsung coba inject ulang jika receiving end tidak ada
+                console.log(`Error 'Receiving end does not exist', mencoba inject ulang content script ke tab ${tabId}`);
+                chrome.scripting.executeScript({
+                  target: { tabId: tabId },
+                  files: ['content.js']
+                }, () => {
+                  if (chrome.runtime.lastError) {
+                    addLog(`Error: Tidak dapat inject content script: ${chrome.runtime.lastError.message}`);
+                    reject(new Error(`Content script tidak dapat diinjeksi: ${chrome.runtime.lastError.message}`));
+                  } else {
+                    console.log(`Content script berhasil diinjeksi ulang ke tab ${tabId}`);
+                    // Coba ping lagi setelah inject
+                    setTimeout(() => {
+                      chrome.tabs.sendMessage(tabId, { action: 'ping' }, (responseAfterReinject) => {
+                        if (chrome.runtime.lastError || !responseAfterReinject || !responseAfterReinject.success) {
+                          reject(new Error('Content script masih tidak merespons setelah inject ulang'));
+                        } else {
+                          resolve(true);
+                        }
+                      });
+                    }, 500);
+                  }
+                });
+                return; // Keluar dari blok if ini karena sudah ditangani
+              }
+              // Untuk error lain, coba ping kembali
               console.log(`Mencoba kembali ping dalam ${(retryCount + 1) * 1000}ms...`);
               setTimeout(() => {
                 pingContentScript(tabId, retryCount + 1, maxRetries)
                   .then(resolve)
                   .catch(reject);
               }, (retryCount + 1) * 1000);
-            } else {
+            } else { // Ini adalah else untuk if (retryCount < maxRetries)
+              // Jika sudah mencapai batas retry atau error fatal (selain 'Receiving end does not exist' yang sudah ditangani)
+              // atau jika errornya bukan 'Receiving end does not exist' dan sudah max retries
+              console.log(`Batas retry tercapai atau error fatal lain untuk ping ke tab ${tabId}. Mencoba inject ulang sebagai upaya terakhir.`);
               // Jika sudah mencapai batas retry atau error fatal
               console.log(`Mencoba inject ulang content script ke tab ${tabId}`);
               chrome.scripting.executeScript({
@@ -470,42 +524,45 @@ async function processNextPrompt() {
       }
     }
     
-    // Set timer untuk prompt berikutnya
-    const nextInterval = getNextInterval();
-    state.timeRemaining = Math.floor(nextInterval / 1000);
-    
-    // Broadcast waktu tersisa
-    broadcastTimeRemaining();
-    
-    // Set timer untuk prompt berikutnya
-    state.timerId = setTimeout(() => {
-      processNextPrompt();
-    }, nextInterval);
-    
-    // Update countdown timer setiap detik
-    const countdownTimer = setInterval(() => {
-      if (state.timeRemaining > 0) {
-        state.timeRemaining--;
-        broadcastTimeRemaining();
-      } else {
-        clearInterval(countdownTimer);
-      }
-    }, 1000);
-    
+    // Jika autoDownloadImages tidak aktif, jadwalkan prompt berikutnya seperti biasa.
+    // Jika aktif, kita akan menunggu pesan 'downloadStatus' dari content.js
+    if (!state.autoDownloadImages) {
+      const baseInterval = getBasePromptInterval();
+      state.timeRemaining = Math.floor(baseInterval / 1000);
+      broadcastTimeRemaining();
+      state.timerId = setTimeout(() => {
+        processNextPrompt();
+      }, baseInterval);
+
+      // Update countdown timer setiap detik
+      const countdownTimer = setInterval(() => {
+        if (state.timeRemaining > 0) {
+          state.timeRemaining--;
+          broadcastTimeRemaining();
+        } else {
+          clearInterval(countdownTimer);
+        }
+      }, 1000);
+    } else {
+      // Status tetap 'waiting' untuk download, tidak ada timer yang diatur di sini.
+      // content.js akan mengirim 'downloadStatus' setelah selesai.
+      addLog('Menunggu status unduhan dari content script...');
+    }
     saveState();
   } catch (error) {
     setStatus('error', error.message);
     
     // Coba lagi setelah interval
-    const retryInterval = getNextInterval();
-    state.timeRemaining = Math.floor(retryInterval / 1000);
+    // Tetap jadwalkan prompt berikutnya meskipun error, gunakan interval dasar standar.
+    const baseRetryInterval = getBasePromptInterval();
+    state.timeRemaining = Math.floor(baseRetryInterval / 1000);
     
     // Broadcast waktu tersisa
     broadcastTimeRemaining();
     
     state.timerId = setTimeout(() => {
       processNextPrompt();
-    }, retryInterval);
+    }, baseRetryInterval);
     
     saveState();
   }
@@ -659,7 +716,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       saveState();
       sendResponse({ success: true });
       break;
-      
+    case 'downloadStatus':
+      addLog(`Menerima downloadStatus: ${message.status}, detail: ${message.detail || ''}`);
+      // Jika autoDownloadImages aktif dan statusnya completed, skipped, atau error, jadwalkan prompt berikutnya.
+      if (state.autoDownloadImages && ['completed', 'skipped', 'error_download', 'no_button', 'stop_button_timeout'].includes(message.status)) {
+        const baseInterval = getBasePromptInterval();
+        state.timeRemaining = Math.floor(baseInterval / 1000);
+        broadcastTimeRemaining();
+        state.timerId = setTimeout(() => {
+          processNextPrompt();
+        }, baseInterval);
+
+        // Update countdown timer setiap detik
+        const countdownTimer = setInterval(() => {
+          if (state.timeRemaining > 0) {
+            state.timeRemaining--;
+            broadcastTimeRemaining();
+          } else {
+            clearInterval(countdownTimer);
+          }
+        }, 1000);
+        saveState();
+      }
+      sendResponse({ success: true });
+      break;
+
     case 'downloadImage':
       console.log('Menerima permintaan unduh gambar:', message);
       
